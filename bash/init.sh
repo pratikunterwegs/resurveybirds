@@ -1,7 +1,9 @@
 #!/bin/bash
 # code to set up the repo
 
-mkdir data figures scripts R
+cd ../
+
+mkdir data figures scripts R supplement
 
 for folder in data figures scripts supplement
 do
@@ -17,3 +19,5 @@ do
         cd ..
     fi
 done
+
+echo "#ignore these files" > .gitignore
