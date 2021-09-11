@@ -3,7 +3,7 @@
 
 mkdir data figures scripts R
 
-for folder in data figures scripts
+for folder in data figures scripts supplement
 do
 	echo "files related to $folder" > $folder/_description.txt
     if [ $folder = "data" ]
