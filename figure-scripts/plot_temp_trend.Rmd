@@ -15,32 +15,14 @@ library(patchwork)
 Load data.
 
 ```{r}
-lt_clim_data = read_csv("data/output/data_monthly_climate.csv")
-
-# pivot longer and summarise
-lt_clim_summary =
-  select(
-    lt_clim_data, 
-    year, x, y,
-    ppt_sum, tmean_mean
-  ) |> 
-  pivot_longer(
-    cols = c(ppt_sum, tmean_mean), 
-    names_to = "variable"
-  ) |> 
-  group_by(x, y, year, variable) |> 
-  summarise(
-    across(
-      value,
-      .fns = list(mean = mean, sd = sd)
-    )
-  )
+lt_clim_data = read_csv("data/output/data_clim_summary.csv")
 
 # filter for study area
-lt_clim_summary = lt_clim_summary |> 
+lt_clim_summary = lt_clim_data |> 
   filter(
     between(y, 9.5, 12),
-    between(x, 76, 78)
+    between(x, 76, 78),
+    variable != "tmean_std"
   )
 # nest data
 lt_clim_summary = 
@@ -51,6 +33,7 @@ lt_clim_summary =
 pal = colorspace::diverge_hcl(
   n = 2, l1 = 50, palette = "Blue-Red"
 )
+
 # add col
 lt_clim_summary = mutate(
   lt_clim_summary,
@@ -77,8 +60,8 @@ plots = pmap(.l = lt_clim_summary,
                ggplot(data)+
                  geom_ribbon(
                    aes(year,
-                       ymin = value_mean - value_sd,
-                       ymax = value_mean + value_sd),
+                       ymin = value_mean - value_std,
+                       ymax = value_mean + value_std),
                    fill = "transparent",
                    col = col,
                    lty = 2,
@@ -90,14 +73,17 @@ plots = pmap(.l = lt_clim_summary,
                    col = col,
                    show.legend = F
                  )+
-                 scale_colour_discrete_diverging(
-                   palette = "Vik", l1 = 50
-                 )+
-                 theme_test()+
+                 theme_grey(base_size = 8)+
                  theme(
                    strip.placement = "outside",
                    axis.text.y = element_text(
                      angle = 90, hjust = 0.5
+                   ),
+                   panel.border = element_rect(
+                     colour = 1, fill = NA
+                   ),
+                   plot.title = element_text(
+                     size = 8
                    )
                  )+
                  coord_cartesian(

@@ -1,7 +1,7 @@
 # code to explore climate data
 # borrows liberally from R using RCall
 
-using RCall, CSV, DataFrames
+using CSV, DataFrames
 using Dates
 using StatsBase, Statistics
 using Gadfly, Cairo
@@ -54,3 +54,20 @@ data = reduce(vcat, data)
 
 # save
 CSV.write("data/output/data_monthly_climate.csv", data)
+
+# summarise further
+data = stack(
+    data, 
+    [:ppt_sum, :tmean_mean, :tmean_std]
+)
+
+# summarise
+gdf = groupby(data, [:x, :y, :year, :variable])
+data_summary = combine(
+    gdf,
+    # groupby(data, [:x, :y, :year]),
+    :value .=> [mean, std]
+)
+
+# save data
+CSV.write("data/output/data_clim_summary.csv", data_summary)
