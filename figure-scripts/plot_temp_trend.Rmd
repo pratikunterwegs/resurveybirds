@@ -1,0 +1,127 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# Climate trends
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(colorspace)
+library(patchwork)
+```
+
+Load data.
+
+```{r}
+lt_clim_data = read_csv("data/output/data_monthly_climate.csv")
+
+# pivot longer and summarise
+lt_clim_summary =
+  select(
+    lt_clim_data, 
+    year, x, y,
+    ppt_sum, tmean_mean
+  ) |> 
+  pivot_longer(
+    cols = c(ppt_sum, tmean_mean), 
+    names_to = "variable"
+  ) |> 
+  group_by(x, y, year, variable) |> 
+  summarise(
+    across(
+      value,
+      .fns = list(mean = mean, sd = sd)
+    )
+  )
+
+# filter for study area
+lt_clim_summary = lt_clim_summary |> 
+  filter(
+    between(y, 9.5, 12),
+    between(x, 76, 78)
+  )
+# nest data
+lt_clim_summary = 
+  lt_clim_summary |> 
+  group_by(x, y, variable) |> 
+  nest()
+
+pal = colorspace::diverge_hcl(
+  n = 2, l1 = 50, palette = "Blue-Red"
+)
+# add col
+lt_clim_summary = mutate(
+  lt_clim_summary,
+  col = if_else(
+    variable == "ppt_sum",
+    pal[1], pal[2]
+  ),
+  ylim_1 = if_else(
+    variable == "ppt_sum",
+    0, 20,
+  ),
+  ylim_2 = if_else(
+    variable == "ppt_sum",
+    600, 30
+  )
+)
+```
+
+Plot data.
+
+```{r}
+plots = pmap(.l = lt_clim_summary,
+             .f = function(x, y, variable, data, col, ylim_1, ylim_2) {
+               ggplot(data)+
+                 geom_ribbon(
+                   aes(year,
+                       ymin = value_mean - value_sd,
+                       ymax = value_mean + value_sd),
+                   fill = "transparent",
+                   col = col,
+                   lty = 2,
+                   size = 0.1,
+                   show.legend = F
+                 )+
+                 geom_line(
+                   aes(year, value_mean),
+                   col = col,
+                   show.legend = F
+                 )+
+                 scale_colour_discrete_diverging(
+                   palette = "Vik", l1 = 50
+                 )+
+                 theme_test()+
+                 theme(
+                   strip.placement = "outside",
+                   axis.text.y = element_text(
+                     angle = 90, hjust = 0.5
+                   )
+                 )+
+                 coord_cartesian(
+                   ylim = c(ylim_1, ylim_2)
+                 )+
+                 labs(
+                   x = "Year",
+                   y = if_else(
+                     variable == "ppt_sum",
+                     "Monthly ppt.",
+                     "Mean temp."
+                   ),
+                   title = glue::glue("{y}N {x}E")
+                 )
+             }
+)
+```
+
+```{r}
+wrap_plots(
+  plots, ncol = 6
+) |>
+  ggsave(
+    filename = "figures/fig_climate_trend.png"
+  )
+```
+
