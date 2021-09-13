@@ -1,0 +1,92 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# Run GAM for climate variables
+
+## Load libs and data
+
+Load libraries.
+
+```{r}
+library(tidyverse)
+library(mgcv)
+library(sf)
+
+# for rasters
+library(raster)
+library(terra)
+```
+
+Load data prepared for the GAM, and the stack predictor raster.
+
+```{r}
+# read data
+data = read_csv("data/output/data_for_gam.csv")
+stack = raster::stack("data/output/raster_gam_stack.tif")
+```
+
+Split the data by five-year period, season, and variable.
+
+```{r}
+# pivot longer
+data = pivot_longer(
+    data,
+    cols = c("ppt_sum", "tmean_mean", "tmean_std"),
+    names_to = "climvar"
+) |> 
+    mutate(
+        lat = y
+    )
+data = dplyr::select(data, !month)
+
+# nest by season, year bin, and variable
+data = data |>
+    group_by(bin_year, climvar, season) |>
+    nest()
+```
+
+## Run GAMs on static environmental predictors
+
+```{r}
+# use a subset
+sub = data$data[[1]]
+```
+
+```{r}
+# run simple model
+mod = gam(
+    formula = value ~ s(elev) + s(coast), data = sub
+)
+
+pred = predict(stack[[c("coast", "elev")]], mod, type = "response")
+
+rstPixDF <- as(stack[[1]], "SpatialPixelsDataFrame")
+
+statPointsTMP <- sub |> 
+    st_as_sf(coords = c("x", "y"), crs = 4326) |> 
+    as("Spatial")
+crs(statPointsTMP) <- crs(rstPixDF)
+statPointsTMP@data <- cbind(statPointsTMP@data, residGAM = resid(mod))
+
+formMod <- residGAM ~ 1
+mod <- vgm(model  = "Exp"#, psill  = 0.15, range  = 10, nugget = 0.01
+           )
+variog <- variogram(formMod, statPointsTMP)
+variogFitOLS <- fit.variogram(variog, model = mod,  fit.method = 6)
+# Plot the results
+plot(variog, variogFitOLS, main="Semi-variogram of GAM residuals")
+
+
+# kriging here
+esidKrigMap <- krige(formula = formMod ,
+                      locations = statPointsTMP, 
+                      model = variogFitOLS,
+                      newdata = rstPixDF)
+residKrigRstLayer <- as(residKrigMap, "RasterLayer")
+gamKrigMap <- rstPredGAM + residKrigRstLayer
+plot(gamKrigMap, main="Annual average air temperature\n(GAM regression-kriging)",
+     xlab="Longitude", ylab="Latitude", cex.main=0.8, cex.axis=0.7, cex=0.8)
+```
+

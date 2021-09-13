@@ -1,0 +1,48 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# Prepare raster GAM predictors
+
+```{r}
+library(terra)
+library(sf)
+```
+
+```{r}
+# load coastline and elevation
+coast = st_read("data/spatial/India/")
+coast_line = st_cast(coast, "MULTILINESTRING")
+
+elev = rast("data/spatial/raster_elevation.tif")
+```
+
+```{r}
+# make coast raster
+coast_raster = terra::distance(elev, terra::vect(coast_line))
+coast_raster = terra::mask(coast_raster, terra::vect(coast))
+```
+
+```{r}
+# latitude raster using copy of elevation and assigning coordinate
+lat_raster = copy(elev)
+terra::values(lat_raster) = terra::yFromCell(
+  lat_raster, 
+  cell = seq(length(values(lat_raster)))
+)
+```
+
+```{r}
+# stack rasters
+stack = c(coast_raster, elev, lat_raster)
+names(stack) = c("coast", "elev", "lat")
+```
+
+```{r}
+terra::writeRaster(
+  stack,
+  "data/output/raster_gam_stack.tif"
+)
+```
+
