@@ -3,4 +3,5 @@
 # ignore data
 data/raw
 data/output
+data/spatial
 .Rproj.user
