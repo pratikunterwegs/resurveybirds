@@ -7,6 +7,7 @@ editor_options:
 
 ```{r}
 library(terra)
+library(stars)
 library(sf)
 ```
 
@@ -15,18 +16,32 @@ library(sf)
 coast = st_read("data/spatial/India/")
 coast_line = st_cast(coast, "MULTILINESTRING")
 
-elev = rast("data/spatial/raster_elevation.tif")
+elev = terra::rast("data/spatial/raster_elevation.tif")
+elev_utm = terra::project(elev, "epsg:32643")
+```
+
+Resample raster to 600 m.
+
+```{r}
+elev_utm_600 = rast(ext(elev_utm), resolution = 600)
+elev_utm_600 = terra::resample(
+  elev_utm, elev_utm_600
+)
+crs(elev_utm_600) = "epsg:32643"
+
+# recast to 4326
+elev_600 = terra::project(elev_utm_600, "epsg:4326")
 ```
 
 ```{r}
 # make coast raster
-coast_raster = terra::distance(elev, terra::vect(coast_line))
+coast_raster = terra::distance(elev_600, terra::vect(coast_line))
 coast_raster = terra::mask(coast_raster, terra::vect(coast))
 ```
 
 ```{r}
 # latitude raster using copy of elevation and assigning coordinate
-lat_raster = copy(elev)
+lat_raster = copy(elev_600)
 terra::values(lat_raster) = terra::yFromCell(
   lat_raster, 
   cell = seq(length(values(lat_raster)))
@@ -35,14 +50,15 @@ terra::values(lat_raster) = terra::yFromCell(
 
 ```{r}
 # stack rasters
-stack = c(coast_raster, elev, lat_raster)
+stack = c(coast_raster, elev_600, lat_raster)
 names(stack) = c("coast", "elev", "lat")
 ```
 
 ```{r}
 terra::writeRaster(
   stack,
-  "data/output/raster_gam_stack.tif"
+  "data/output/raster_gam_stack.tif",
+  overwrite = T
 )
 ```
 
