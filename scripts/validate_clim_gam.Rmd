@@ -149,6 +149,8 @@ save(
 
 ## Get BIOCLIM data
 
+### Get mean temperature
+
 ```{r}
 patterns <- c("tmin", "tmax")
 
@@ -167,13 +169,8 @@ tkAvg <- map(patterns, function(pattern) {
 tkAvg <- map(tkAvg, function(paths) {
   # going over the file paths, read them in as rasters, convert CRS and crop
   tempData <- map(paths, function(path) {
-    # read in
     a <- terra::rast(path)
-    # assign crs
-    # terra::crs(a) <- "epsg:4326"
-    # crop by buffer, will throw error if CRS doesn't match
     a <- terra::crop(a, terra::ext(stack))
-    # return a
     a
   })
   # convert each to kelvin, first dividing by 10 to get celsius
@@ -209,7 +206,7 @@ temp_rainy = Reduce(tkAvg[seq(6, 11)], f = `c`) |>
 temp_dry = Reduce(tkAvg[c(12, seq(5))], f = `c`) |>
   terra::mean()
 
-# convert values
+# convert values back to celsius
 chelsa_t_mean = c(temp_rainy, temp_dry) - 273.15
 names(chelsa_t_mean) = c("chelsa_temp_rainy_6_11", "chelsa_temp_dry_12_5")
 
@@ -220,3 +217,54 @@ terra::writeRaster(
 )
 ```
 
+### Get precipitation
+
+```{r}
+# list precipitation rasters --- get from BIOCLIM
+# will need update to envidat path?
+
+# crop by elevation stack
+
+# divide into dry and rainy
+
+# save stack
+```
+
+## Get sample coordinates
+
+```{r}
+# get coordinates from terra
+coords = terra::xyFromCell(stack)
+
+# sample 10 groups of 1000
+coords = coords[sample(1e4, replace = FALSE), ]
+
+# extract data at locations
+```
+
+## Sample BIOCLIM rasters and model predictions at coordinates
+
+```{r}
+# sample all rasters
+
+# save comparison data
+```
+
+## Compare BIOCLIM and model predictions
+
+```{r}
+# use RMSE Measure for 10 chunks of 1000 coordinates
+
+# save RMSE measures for plotting --- plot script in figure scripts
+```
+
+## GAM predictions at survey sites
+
+```{r}
+# read survey sites
+
+# sample rasters at survey sites
+
+# save measures at survey sites
+
+```
