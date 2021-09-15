@@ -1,7 +1,11 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
 
 # Validating semi-Spatial GAMs for climate
 
-## Load libs and data
+## Prepare weather and spatial data
 
 ```{r}
 # for data
@@ -40,7 +44,7 @@ data = mutate(
 values(stack[["coast"]]) = values(stack[["coast"]]) / 1000
 ```
 
-Split the data by year interval, season, and variable.
+Pivot longer to separate by variable.
 
 ```{r}
 # pivot longer
@@ -51,8 +55,57 @@ data = pivot_longer(
 )
 data = dplyr::select(data, !month)
 
-# nest by season, year bin, and variable
-data = data |>
-    group_by(year_bin, climvar, season) |>
-    nest()
+# select period 1970 -- 2010
+data = filter(data, between(year, 1970, 2010))
 ```
+
+Split the data by variable.
+
+```{r}
+data = nest(
+  data, data = !c(climvar, season, year_bin)
+)
+```
+
+## Fit candidate models
+
+Prepare model formulas.
+
+```{r}
+# elevation with 3 knots
+form_elev_model = value ~ s(elev, k = 3)
+
+# elevation and coast
+form_elev_coast = value ~ s(elev, k = 3) + s(coast, k = 3)
+
+# elevation and coast with lat
+form_elev_colat = value ~ s(elev, k = 3) + s(coast, lat, k = 5)
+```
+
+```{r}
+# make combinations
+data = crossing(
+  data, 
+  forms = c(form_elev_model, form_elev_coast, form_elev_colat)
+)
+```
+
+```{r}
+# fit models
+data = mutate(
+  data,
+  mod = map2(data, forms, function(df, form) {
+    gam(
+      formula = form,
+      data = df
+    )
+  })
+)
+```
+
+Save model data.
+
+```{r}
+save(data, file = "data/output/model_gam_climate.Rds")
+```
+
