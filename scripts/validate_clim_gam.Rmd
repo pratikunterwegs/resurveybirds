@@ -109,3 +109,16 @@ Save model data.
 save(data, file = "data/output/model_gam_climate.Rds")
 ```
 
+## Predict over static environment
+
+```{r}
+# save model predictions
+model_pred = map(
+  data$mod, function(g) {
+    predict(stack, g, type = "response") # order matters here
+  }
+)
+
+save(model_pred, file = "data/output/model_pred_climate.Rds")
+```
+
