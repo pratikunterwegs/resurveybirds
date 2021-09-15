@@ -14,7 +14,6 @@ library(lubridate)
 
 # spatial libs
 library(terra)
-library(stars)
 library(sf)
 ```
 
@@ -141,7 +140,7 @@ ext = st_bbox(coord_sf) |>
     st_buffer(25000) |>
     st_transform(4326)
 elevation = terra::rast('data/spatial/Elevation/alt')
-terra::crs(elevation)
+
 elevation_hills = terra::crop(elevation, as(ext, 'Spatial'))
 terra::writeRaster(elevation_hills, 'data/spatial/raster_elevation.tif',
     overwrite = TRUE)
@@ -151,7 +150,7 @@ terra::writeRaster(elevation_hills, 'data/spatial/raster_elevation.tif',
 
 ```{r}
 # load coastline and elevation
-coast = st_read("data/spatial/India/")
+coast = st_read("data/spatial/India/India_Boundary.shp")
 coast_line = st_cast(coast, "MULTILINESTRING")
 
 elev = terra::rast("data/spatial/raster_elevation.tif")
@@ -234,4 +233,3 @@ write_csv(
   "data/output/data_for_gam.csv"
 )
 ```
-
