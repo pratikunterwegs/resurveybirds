@@ -150,6 +150,73 @@ save(
 ## Get BIOCLIM data
 
 ```{r}
+patterns <- c("tmin", "tmax")
 
+# list the filepaths
+tkAvg <- map(patterns, function(pattern) {
+  # list the paths
+  files <- list.files(
+    path = "data/spatial/chelsa",
+    full.names = TRUE,
+    recursive = TRUE,
+    pattern = pattern
+  )
+})
+
+# now run over the paths and read as rasters and crop by buffer
+tkAvg <- map(tkAvg, function(paths) {
+  # going over the file paths, read them in as rasters, convert CRS and crop
+  tempData <- map(paths, function(path) {
+    # read in
+    a <- terra::rast(path)
+    # assign crs
+    # terra::crs(a) <- "epsg:4326"
+    # crop by buffer, will throw error if CRS doesn't match
+    a <- terra::crop(a, terra::ext(stack))
+    # return a
+    a
+  })
+  # convert each to kelvin, first dividing by 10 to get celsius
+  tempData <- map(tempData, function(tmpRaster) {
+    terra::values(tmpRaster) <- terra::values(tmpRaster / 10) + 273.15
+    tmpRaster
+  })
+})
+
+# recursively get the mean temperature for each month
+# assign names
+names(tkAvg) <- patterns
+
+# go over the tmin and tmax and get the average monthly temp
+tkAvg <- map2(tkAvg[["tmin"]], tkAvg[["tmax"]], function(tmin, tmax) {
+  # return the mean of the corresponding tmin and tmax
+  # still in kelvin
+  terra::mean(c(tmin, tmax))
+})
+
+# check temp data
+assertthat::assert_that(
+  length(tkAvg) == 12,
+  msg = "temp raster list has fewer than 12 months"
+)
+
+# assign names
+names(tkAvg) = sprintf("month_%i", seq(12))
+
+# separate rainy and dry season
+temp_rainy = Reduce(tkAvg[seq(6, 11)], f = `c`) |>
+  terra::mean()
+temp_dry = Reduce(tkAvg[c(12, seq(5))], f = `c`) |>
+  terra::mean()
+
+# convert values
+chelsa_t_mean = c(temp_rainy, temp_dry) - 273.15
+names(chelsa_t_mean) = c("chelsa_temp_rainy_6_11", "chelsa_temp_dry_12_5")
+
+# save stack
+terra::writeRaster(
+  chelsa_t_mean,
+  filename = "data/output/chelsa_temp_stack.tif"
+)
 ```
 
