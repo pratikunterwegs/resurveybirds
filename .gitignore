@@ -5,3 +5,6 @@ data/raw
 data/output
 data/spatial
 .Rproj.user
+
+# allow chelsa list
+!*envidatS3paths.txt
