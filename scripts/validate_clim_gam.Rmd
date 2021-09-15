@@ -111,6 +111,8 @@ save(data, file = "data/output/model_gam_climate.Rds")
 
 ## Predict over static environment
 
+Get predictions
+
 ```{r}
 # save model predictions
 model_pred = map(
@@ -120,5 +122,34 @@ model_pred = map(
 )
 
 save(model_pred, file = "data/output/model_pred_climate.Rds")
+```
+
+Average predictions over 1970 -- 2010.
+
+```{r}
+# assign as list column
+data = mutate(
+  data,
+  pred = model_pred
+)
+
+# summarise using a reduce over the list
+data_pred = ungroup(data) %>% 
+  group_by(season, climvar, forms) %>% 
+  summarise(
+    mean_pred = list(Reduce(pred, f = mean))
+  )
+
+# save averaged predictions
+save(
+  data_pred,
+  file = "data/output/model_pred_average.Rds"
+)
+```
+
+## Get BIOCLIM data
+
+```{r}
+
 ```
 
