@@ -1,0 +1,58 @@
+
+# Validating semi-Spatial GAMs for climate
+
+## Load libs and data
+
+```{r}
+# for data
+library(tidyverse)
+library(sf)
+
+# for gam
+library(mgcv)
+
+# for rasters
+library(raster)
+library(terra)
+```
+
+Load data prepared for the GAM, and the stack predictor raster.
+
+```{r}
+# read data
+data = read_csv("data/output/data_for_gam.csv")
+stack = raster::stack("data/output/raster_gam_stack.tif")
+```
+
+Prepare data covariates and raster.
+
+```{r}
+# trim data for distance to coast
+data = mutate(
+  data,
+  coast = coast / 1000,
+  coast = coast + rnorm(length(coast), 0.1, sd = 0.01),
+  elev = elev + rnorm(length(coast), 1, sd = 0.01),
+  lat = lat + rnorm(length(lat), 0, sd = 0.01)
+)
+
+# set distance to coast raster in km
+values(stack[["coast"]]) = values(stack[["coast"]]) / 1000
+```
+
+Split the data by year interval, season, and variable.
+
+```{r}
+# pivot longer
+data = pivot_longer(
+    data,
+    cols = c("ppt", "t_mean", "t_sd"),
+    names_to = "climvar"
+)
+data = dplyr::select(data, !month)
+
+# nest by season, year bin, and variable
+data = data |>
+    group_by(year_bin, climvar, season) |>
+    nest()
+```

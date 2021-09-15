@@ -3,13 +3,151 @@ editor_options:
   chunk_output_type: console
 ---
 
-# Prepare raster GAM predictors
+# Prepare Climate Data for Interpolation
 
 ```{r}
+# data libs
+# use tidyverse because small data
+# and collab readability
+library(tidyverse) # because data are small
+library(lubridate)
+
+# spatial libs
 library(terra)
 library(stars)
 library(sf)
 ```
+
+## Prepare climate data
+
+### Read data and add date
+
+```{r}
+clim_files = list.files("data/raw/iitg-climate", full.names = T)
+data = map(clim_files, read_delim, 
+           delim = " ", col_names = c("ppt", "tmin", "tmax", "wind")
+)
+
+# seq dates
+seq_date = seq(
+  ymd("1870-01-01"), 
+  ymd("2018-12-31"), 
+  by = "days"
+)
+
+# add date, year, month, and season
+data = map2(
+  data, clim_files,
+  function(df, clf) {
+    coords = str_extract_all(clf, "\\d+\\.\\d+")[[1]]
+    mutate(
+      df, 
+      date = seq_date,
+      year = year(date),
+      month = month(date),
+      season = if_else(between(month, 6, 11), "rainy", "dry"),
+      x = as.numeric(coords[2]),
+      y = as.numeric(coords[1])
+    )
+  }
+)
+
+# bind all data
+data = bind_rows(data)
+
+# check data
+assertthat::assert_that(
+  nrow(
+    distinct(data, x, y)
+  ) == length(clim_files),
+  msg = "error in some weather station coordinates"
+)
+
+# filter for southern western ghats
+# y < 12 and y > 9
+data = filter(
+  data,
+  between(y, 9, 12)
+)
+
+# save data
+write_csv(
+  data,
+  file = "data/output/data_clim_daily.csv"
+)
+```
+
+### Summarise by month
+
+```{r}
+# get daily mean temperature
+data = mutate(
+  data,
+  tmean = (tmax + tmin) / 2
+)
+
+# prepare to summarise
+data = group_by(
+  data,
+  x, y, month, year, season,
+) |> 
+  # groups will be added by default
+  select(
+    ppt, tmean
+  )
+
+# summarise monthly ppt sum and tmean mean and sd
+data = summarise(
+  data,
+  ppt = sum(ppt),
+  t_mean = mean(tmean),
+  t_sd = sd(tmean)
+)
+
+# save summary
+write_csv(
+  data,
+  "data/output/data_monthly_climate.csv"
+)
+```
+
+### Prepare for spatial data
+
+```{r}
+# get unique data
+coords = ungroup(data) |> 
+  distinct(x, y) |> 
+  mutate_all(
+    as.numeric
+  )
+```
+
+## Prepare spatial data
+
+### Prepare elevation data
+
+```{r}
+# get unique coordinates
+coord_sf = st_as_sf(
+  coords, 
+  coords = c('x', 'y'), 
+  crs = 4326
+)
+
+# get extent to clip elevation
+ext = st_bbox(coord_sf) |> 
+    st_as_sfc() |> 
+    st_transform(32643) |>
+    st_buffer(25000) |>
+    st_transform(4326)
+elevation = terra::rast('data/spatial/Elevation/alt')
+terra::crs(elevation)
+elevation_hills = terra::crop(elevation, as(ext, 'Spatial'))
+terra::writeRaster(elevation_hills, 'data/spatial/raster_elevation.tif',
+    overwrite = TRUE)
+```
+
+### Prepare coastline data
 
 ```{r}
 # load coastline and elevation
@@ -59,6 +197,41 @@ terra::writeRaster(
   stack,
   "data/output/raster_gam_stack.tif",
   overwrite = T
+)
+```
+
+## Link predictors to climate data
+
+```{r}
+# extract covariates using high-res raster
+coords = mutate(
+  coords,
+  elev = terra::extract(
+    elevation_hills,
+    st_coordinates(coord_sf)
+  )$alt,
+  coast = as.numeric(
+    st_distance(coord_sf, coast_line)
+  ),
+  lat = y
+) 
+
+# link to climate data summary
+data = left_join(
+  data,
+  coords
+)
+
+# bin into 10 year intervals
+data = mutate(
+  data,
+  year_bin = floor(year / 10) * 10
+)
+
+# save data
+write_csv(
+  data,
+  "data/output/data_for_gam.csv"
 )
 ```
 

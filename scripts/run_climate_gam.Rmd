@@ -7,12 +7,13 @@ editor_options:
 
 ## Load libs and data
 
-Load libraries.
-
 ```{r}
+# for data
 library(tidyverse)
-library(mgcv)
 library(sf)
+
+# for gam
+library(mgcv)
 
 # for rasters
 library(raster)
@@ -27,23 +28,36 @@ data = read_csv("data/output/data_for_gam.csv")
 stack = raster::stack("data/output/raster_gam_stack.tif")
 ```
 
-Split the data by five-year period, season, and variable.
+Prepare data covariates and raster.
+
+```{r}
+# trim data for distance to coast
+data = mutate(
+  data,
+  coast = coast / 1000,
+  coast = coast + rnorm(length(coast), 0.1, sd = 0.01),
+  elev = elev + rnorm(length(coast), 1, sd = 0.01),
+  lat = lat + rnorm(length(lat), 0, sd = 0.01)
+)
+
+# set distance to coast raster in km
+values(stack[["coast"]]) = values(stack[["coast"]]) / 1000
+```
+
+Split the data by year interval, season, and variable.
 
 ```{r}
 # pivot longer
 data = pivot_longer(
     data,
-    cols = c("ppt_sum", "tmean_mean", "tmean_std"),
+    cols = c("ppt", "t_mean", "t_sd"),
     names_to = "climvar"
-) |> 
-    mutate(
-        lat = y
-    )
+)
 data = dplyr::select(data, !month)
 
 # nest by season, year bin, and variable
 data = data |>
-    group_by(bin_year, climvar, season) |>
+    group_by(year_bin, climvar, season) |>
     nest()
 ```
 
@@ -51,16 +65,19 @@ data = data |>
 
 ```{r}
 # use a subset
-sub = data$data[[1]]
+# sub = data$data[[1]]
+sub = data$data[[2]]
 ```
 
 ```{r}
 # run simple model
 mod = gam(
-    formula = value ~ s(elev) + s(coast), data = sub
+    formula = value ~ s(elev, k = 3) + coast, data = sub
 )
+plot(mod)
+pred = predict(stack[[c("coast", "elev", "lat")]], mod, type = "response")
 
-pred = predict(stack[[c("coast", "elev")]], mod, type = "response")
+plot(pred, col = pals::kovesi.rainbow(20))
 
 rstPixDF <- as(stack[[1]], "SpatialPixelsDataFrame")
 
