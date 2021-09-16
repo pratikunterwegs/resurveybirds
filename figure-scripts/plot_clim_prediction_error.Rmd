@@ -1,0 +1,132 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# GAM error in predicting climate
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(colorspace)
+library(patchwork)
+```
+
+## Load data
+
+```{r}
+error_data = read_csv("data/output/data_gam_comparison_mae.csv")
+survey_clim = read_csv("data/output/data_gam_compare_survey_sites.csv")
+```
+
+## Plot model error
+
+```{r}
+# nest data
+error_data = nest(
+  error_data,
+  data = !c("climvar")
+)
+
+forms = distinct(survey_clim, form = forms)
+
+# plot data
+plots = map2(
+  error_data$data, error_data$climvar,
+  function(df, cl) {
+    ggplot(df)+
+      geom_boxplot(
+        aes(
+          forms, mae
+        )
+      )+
+      geom_text(
+        data = forms,
+        aes(
+          form, median(df$mae),
+          label = form
+        ),
+        angle = 90,
+        hjust = "inward",
+        nudge_x = -0.2,
+        fontface = "italic"
+      )+
+      scale_y_log10()+
+      facet_wrap(
+        ~season, labeller = label_both
+      )+
+      theme_grey(base_size = 10)+
+      theme(
+        strip.background = element_blank(),
+        axis.text.y = element_text(
+          angle = 90,
+          hjust = 0.5
+        ),
+        axis.text.x = element_blank(),
+        panel.border = element_rect(
+          fill = NA, colour = "black"
+        )
+      )+
+      labs(
+        x = "GAM formula",
+        y = "Mean absolute error",
+        title = ifelse(
+          cl == "ppt", 
+          "Precipation",
+          "Mean temperature"
+        )
+      )
+  })
+
+plots = wrap_plots(
+  plots, ncol = 1
+) +
+  plot_annotation(
+    tag_levels = "A"
+  ) &
+  theme(
+    plot.tag = element_text(
+      face = "bold"
+    )
+  )
+
+ggsave(
+  plots, filename = "figures/fig_compare_models_general.png"
+)
+```
+
+## Compare climate predictions at survey sites
+
+```{r}
+plot = ggplot(survey_clim)+
+  geom_abline(
+    slope = 1
+  )+
+  geom_point(
+    aes(bioclim_val, pred_val,
+        col = forms)
+  )+
+  scale_y_continuous(
+    trans = "sqrt"
+    # trans = ggallin::ssqrt_trans
+  )+
+  facet_wrap(
+    climvar ~ season, scales = "free",
+    labeller = labeller(.multi_line = F)
+  )+
+  theme(
+    legend.position = "top",
+    panel.border = element_rect(
+      fill = NA, colour = "black"
+    )
+  )+
+  labs(
+    colur = "Model"
+  )
+
+ggsave(
+  plot,
+  filename = "figures/fig_survey_site_model_comparison.png"
+)
+```
+
