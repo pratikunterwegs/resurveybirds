@@ -10,6 +10,8 @@ library(tidyverse)
 library(ggplot2)
 library(colorspace)
 library(patchwork)
+
+library(terra)
 ```
 
 ## Load data
@@ -17,6 +19,9 @@ library(patchwork)
 ```{r}
 error_data = read_csv("data/output/data_gam_comparison_mae.csv")
 survey_clim = read_csv("data/output/data_gam_compare_survey_sites.csv")
+
+# load raster
+load("data/output/model_pred_climate.Rds")
 ```
 
 ## Plot model error
@@ -38,17 +43,20 @@ plots = map2(
       geom_boxplot(
         aes(
           forms, mae
-        )
+        ),
+        width = 0.5
       )+
       geom_text(
         data = forms,
         aes(
-          form, median(df$mae),
+          form, 1,
           label = form
         ),
         angle = 90,
         hjust = "inward",
-        nudge_x = -0.2,
+        nudge_x = -0.5,
+        col = "steelblue",
+        alpha = 0.6,
         fontface = "italic"
       )+
       scale_y_log10()+
@@ -91,42 +99,74 @@ plots = wrap_plots(
   )
 
 ggsave(
-  plots, filename = "figures/fig_compare_models_general.png"
+  plots, filename = "figures/fig_compare_models_general.png",
+  width = 6,
+  height = 8
 )
 ```
 
 ## Compare climate predictions at survey sites
 
 ```{r}
-plot = ggplot(survey_clim)+
-  geom_abline(
-    slope = 1
-  )+
-  geom_point(
-    aes(bioclim_val, pred_val,
-        col = forms)
-  )+
-  scale_y_continuous(
-    trans = "sqrt"
-    # trans = ggallin::ssqrt_trans
-  )+
-  facet_wrap(
-    climvar ~ season, scales = "free",
-    labeller = labeller(.multi_line = F)
-  )+
-  theme(
-    legend.position = "top",
-    panel.border = element_rect(
-      fill = NA, colour = "black"
-    )
-  )+
-  labs(
-    colur = "Model"
+survey_clim = group_by(survey_clim, climvar, season) |>
+  nest()
+
+plots_survey_pts = Map(
+  survey_clim$climvar, survey_clim$data, survey_clim$season,
+  f = function(cvar, df, season) {
+    ggplot(
+      df
+    )+
+      geom_abline(
+        slope = 1
+      )+
+      geom_point(
+        aes(bioclim_val, pred_val),
+        shape = 1,
+        alpha = 0.8
+      )+
+      scale_y_continuous(
+        # trans = "sqrt"
+        # trans = ggallin::ssqrt_trans
+      )+
+      facet_grid(
+        ~ forms, scales = "free",
+        labeller = labeller(
+          .multi_line = F,
+          season = label_both
+        )
+      )+
+      theme_grey(
+        base_size = 8
+      )+
+      theme(
+        legend.position = "top",
+        panel.border = element_rect(
+          fill = NA, colour = "black"
+        )
+      )+
+      labs(
+        colur = "Model",
+        title = ifelse(
+          cvar == "ppt", 
+          glue::glue("Precipation; season: {season}"),
+          glue::glue("Mean temperature; season: {season}")
+        )
+      )
+  }
+)
+
+plots_survey_pts = wrap_plots(
+  plots_survey_pts, ncol = 1
+) +
+  plot_annotation(
+    tag_levels = "A"
   )
 
 ggsave(
-  plot,
-  filename = "figures/fig_survey_site_model_comparison.png"
+  plots_survey_pts,
+  filename = "figures/fig_survey_site_model_comparison.png",
+  height = 10, width = 6
 )
 ```
 
