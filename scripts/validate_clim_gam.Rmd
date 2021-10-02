@@ -76,7 +76,7 @@ Prepare model formulas.
 form_elev_model = value ~ s(elev, k = 3)
 
 # elevation and coast
-form_elev_coast = value ~ s(elev, k = 3) + s(coast, k = 3)
+form_elev_coast = value ~ s(elev, k = 3) + coast + lat
 
 # elevation and coast with lat
 form_elev_colat = value ~ s(elev, k = 3) + s(coast, lat, k = 5)
@@ -121,7 +121,8 @@ model_pred = map(
   }
 )
 
-save(model_pred, file = "data/output/model_pred_climate.Rds")
+model_pred = Reduce(model_pred, f = c)
+terra::writeRaster(model_pred, "data/output/data_gam_pred.tif")
 ```
 
 Average predictions over 1970 -- 2010.
