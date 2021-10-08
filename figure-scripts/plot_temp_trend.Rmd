@@ -10,6 +10,9 @@ library(tidyverse)
 library(ggplot2)
 library(colorspace)
 library(patchwork)
+
+library(terra)
+library(stars)
 ```
 
 Load data.
@@ -24,87 +27,120 @@ lt_clim_summary = lt_clim_data |>
     between(x, 76, 78),
     variable != "tmean_std"
   )
+```
+
+```{r}
+# get elevation
+elevation = terra::rast("data/spatial/raster_elevation.tif")
+coords = ungroup(lt_clim_summary) |> distinct(x, y)
+
+# extract values
+coords$elev = terra::extract(elevation, coords)$alt
+# make stars for ggplot
+elevation = stars::st_as_stars(elevation)
+```
+
+```{r}
+# plot site locations
+plot_sites = ggplot()+
+  geom_stars(
+    data = elevation,
+    downsample = 2
+  )+
+  geom_point(
+    data = coords,
+    aes(x, y),
+    size = 2
+  )+
+  scale_fill_continuous_sequential(
+    palette = "Batlow",
+    na.value = "transparent",
+    limits = c(0, 2650),
+    name = "elev"
+  )+
+  theme_test()+
+  theme(
+    legend.position = "top",
+    legend.key.height = unit(2, "mm"),
+    legend.key.width = unit(10, "mm")
+  )+
+  coord_sf(
+    expand = F
+  )+
+  labs(
+    x = "long",
+    y = "lat"
+  )
+```
+
+
+```{r}
 # nest data
 lt_clim_summary = 
   lt_clim_summary |> 
   group_by(x, y, variable) |> 
   nest()
 
-pal = colorspace::diverge_hcl(
-  n = 2, l1 = 50, palette = "Blue-Red"
+# add elevation
+lt_clim_summary = left_join(
+  lt_clim_summary, coords
 )
 
-# add col
-lt_clim_summary = mutate(
-  lt_clim_summary,
-  col = if_else(
-    variable == "ppt_sum",
-    pal[1], pal[2]
-  ),
-  ylim_1 = if_else(
-    variable == "ppt_sum",
-    0, 20,
-  ),
-  ylim_2 = if_else(
-    variable == "ppt_sum",
-    600, 30
-  )
-)
+# split by variable
+lt_clim_summary = unnest(lt_clim_summary, cols = "data")
+lt_clim_summary = nest(lt_clim_summary, !variable)
 ```
 
-Plot data.
-
 ```{r}
-plots = pmap(.l = lt_clim_summary,
-             .f = function(x, y, variable, data, col, ylim_1, ylim_2) {
-               ggplot(data)+
-                 geom_ribbon(
-                   aes(year,
-                       ymin = value_mean - value_std,
-                       ymax = value_mean + value_std),
-                   fill = "transparent",
-                   col = col,
-                   lty = 2,
-                   size = 0.1,
-                   show.legend = F
-                 )+
-                 geom_line(
-                   aes(year, value_mean),
-                   col = col,
-                   show.legend = F
-                 )+
-                 theme_grey(base_size = 8)+
-                 theme(
-                   strip.placement = "outside",
-                   axis.text.y = element_text(
-                     angle = 90, hjust = 0.5
-                   ),
-                   panel.border = element_rect(
-                     colour = 1, fill = NA
-                   ),
-                   plot.title = element_text(
-                     size = 8
-                   )
-                 )+
-                 coord_cartesian(
-                   ylim = c(ylim_1, ylim_2)
-                 )+
-                 labs(
-                   x = "Year",
-                   y = if_else(
-                     variable == "ppt_sum",
-                     "Monthly ppt.",
-                     "Mean temp."
-                   ),
-                   title = glue::glue("{y}N {x}E")
-                 )
-             }
-)
+plots = pmap(.l = lt_clim_summary, .f = function(variable, data) {
+  ggplot(data)+
+    geom_line(
+      aes(year, value_mean, col = elev, 
+          group = interaction(x, y))
+    )+
+    scale_colour_continuous_sequential(
+      palette = "Batlow",
+      na.value = "transparent",
+      limits = c(0, 2650),
+      name = "elev"
+    )+
+    scale_x_continuous(
+      breaks = c(1870, 1900, 1930, 1960, 1990, 2018)
+    )+
+    theme_grey()+
+    theme(
+      strip.placement = "outside",
+      axis.text.y = element_text(
+        angle = 90, hjust = 0.5
+      ),
+      panel.border = element_rect(
+        colour = 1, fill = NA
+      ),
+      legend.position = "top",
+      legend.key.height = unit(2, "mm"),
+      legend.key.width = unit(10, "mm")
+    )+
+    labs(
+      x = "Year",
+      y = if_else(
+        variable == "ppt_sum",
+        "Monthly ppt.",
+        "Mean temp."
+      )
+    )
+})
+
+plot_trend = wrap_plots(plots, guides = "collect", ncol = 1) &
+  theme(
+    legend.position = "top"
+  )
 ```
 
 ```{r}
 wrap_plots(
-  plots, ncol = 6
+  plot_sites,
+  plot_trend,
+  ncol = 2
 ) |>
   ggsave(
     filename = "figures/fig_climate_trend.png"
