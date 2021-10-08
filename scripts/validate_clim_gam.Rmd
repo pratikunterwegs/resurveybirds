@@ -141,6 +141,25 @@ data_pred = ungroup(data) %>%
     mean_pred = list(Reduce(pred, f = mean))
   )
 
+# make raster stack
+gam_pred_avg = data_pred$mean_pred
+gam_pred_avg = Reduce(f = c, gam_pred_avg)
+
+# save averaged predictions
+terra::writeRaster(gam_pred_avg, filename = "data/output/gam_pred_valid_avg.tif")
+# write data for linking
+data_pred |>
+  ungroup() |>
+  distinct(season, climvar, forms) |>
+  mutate(
+    forms = map_chr(forms, function(l) {
+      str_flatten(as.character(l)[c(2, 1, 3)])
+    })
+  ) |>
+  write_csv(
+    file = "data/output/gam_model_formulas.csv"
+  )
+
 # save averaged predictions
 save(
   data_pred,
