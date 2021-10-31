@@ -1,0 +1,175 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# Fitting semi-Spatial GAMs for climate
+
+## Prepare weather and spatial data
+
+```{r}
+# for data
+library(tidyverse)
+library(sf)
+library(readxl)
+
+# for gam
+library(mgcv)
+
+# for rasters
+library(terra)
+```
+
+Load data prepared for the GAM, and the stack predictor raster.
+
+```{r}
+# read data
+data = read_csv("data/output/data_for_gam.csv")
+stack = terra::rast("data/output/raster_gam_stack.tif")
+```
+
+Prepare data covariates and raster.
+
+```{r}
+# trim data for distance to coast
+data = mutate(
+  data,
+  coast = coast / 1000,
+  coast = coast + rnorm(length(coast), 0.1, sd = 0.01),
+  elev = elev + rnorm(length(coast), 1, sd = 0.01),
+  lat = lat + rnorm(length(lat), 0, sd = 0.01)
+)
+
+# set distance to coast raster in km
+values(stack[["coast"]]) = values(stack[["coast"]]) / 1000
+```
+
+Pivot longer to separate by variable.
+
+```{r}
+# pivot longer
+data = pivot_longer(
+    data,
+    cols = c("ppt", "t_mean", "t_sd"),
+    names_to = "climvar"
+)
+data = dplyr::select(data, !month)
+
+# select period 1970 -- 2010
+data = filter(data, between(year, 1970, 2010))
+```
+
+Split the data by variable.
+
+```{r}
+data = nest(
+  data, data = !c(climvar, season, year_bin)
+)
+```
+
+## Fit candidate models
+
+Prepare model formulas.
+
+```{r}
+# elevation with 3 knots
+form_elev_model = value ~ s(elev, k = 3)
+
+# elevation and coast
+form_elev_coast = value ~ s(elev, k = 3) + coast + lat
+
+# elevation and coast with lat
+form_elev_colat = value ~ s(elev, k = 3) + s(coast, lat, k = 5)
+```
+
+```{r}
+# make combinations
+data = crossing(
+  data, 
+  forms = c(form_elev_model, form_elev_coast, form_elev_colat)
+)
+```
+
+```{r}
+# fit models
+data = mutate(
+  data,
+  mod = map2(data, forms, function(df, form) {
+    gam(
+      formula = form,
+      data = df
+    )
+  })
+)
+```
+
+Save model data.
+
+```{r}
+save(data, file = "data/output/model_gam_climate.Rds")
+```
+
+## Predict over static environment
+
+Get predictions
+
+```{r}
+# save model predictions
+model_pred = map(
+  data$mod, function(g) {
+    predict(stack, g, type = "response") # order matters here
+  }
+)
+
+model_pred = Reduce(model_pred, f = c)
+terra::writeRaster(model_pred, "data/output/data_gam_pred.tif")
+```
+
+```{r}
+model_pred = terra::rast("data/output/data_gam_pred.tif")
+```
+
+Average predictions over 1970 -- 2010.
+
+```{r}
+# assign as list column
+data = mutate(
+  data,
+  pred = as.list(model_pred)
+)
+
+# summarise using a reduce over the list
+data_pred = ungroup(data) %>% 
+  group_by(season, climvar, forms) %>% 
+  summarise(
+    mean_pred = list(Reduce(pred, f = mean))
+  )
+
+# make raster stack
+gam_pred_avg = data_pred$mean_pred
+gam_pred_avg = Reduce(f = c, gam_pred_avg)
+
+# save averaged predictions
+terra::writeRaster(gam_pred_avg, filename = "data/output/gam_pred_valid_avg.tif")
+
+# load saved pred
+
+# write data for linking
+data_pred |>
+  ungroup() |>
+  distinct(season, climvar, forms) |>
+  mutate(
+    forms = map_chr(forms, function(l) {
+      str_flatten(as.character(l)[c(2, 1, 3)])
+    })
+  ) |>
+  write_csv(
+    file = "data/output/gam_model_formulas.csv"
+  )
+
+# save averaged predictions
+save(
+  data_pred,
+  file = "data/output/model_pred_average.Rds"
+)
+```
