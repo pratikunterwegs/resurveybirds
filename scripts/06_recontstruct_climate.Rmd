@@ -1,0 +1,12 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# Reconstructing Historical Climate
+
+## Fit decadal GAMs using best models
+
+## Correct decadal predictions
+
+## Aggregate decadal predictions
