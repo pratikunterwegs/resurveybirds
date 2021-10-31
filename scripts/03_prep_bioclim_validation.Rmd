@@ -5,9 +5,7 @@ editor_options:
 
 # Prepare BIOCLIM data to validate candidate climate GAMs
 
-## Get BIOCLIM data
-
-### Get mean temperature
+## Mean monthly temperature
 
 ```{r}
 patterns <- c("tmin", "tmax")
@@ -76,7 +74,7 @@ terra::writeRaster(
 )
 ```
 
-### Get precipitation
+## Total monthly precipitation
 
 ```{r}
 # list precipitation rasters --- get from BIOCLIM
