@@ -5,9 +5,7 @@ editor_options:
 
 # Making Climate Correction Layers
 
-## Plot GAM prediction residuals
-
-### Load predicted data
+## Load GAM predictions
 
 ```{r}
 # load data
@@ -16,14 +14,19 @@ gam_validation_pred = terra::rast("data/output/gam_pred_valid_avg.tif") |>
 gam_validation_id = read_csv("data/output/gam_model_formulas.csv")
 
 # select and save
-gam_validation_pred = gam_validation_pred[gam_validation_id$climvar %in% c("ppt", "t_mean")]
+gam_validation_pred = gam_validation_pred[
+  gam_validation_id$climvar %in% c("ppt", "t_mean")
+]
 gam_validation_id = filter(gam_validation_id, climvar %in% c("ppt", "t_mean"))
 
 # link -- could have filtered here too -- oh well
-gam_validation_data = mutate(gam_validation_id, prediction = gam_validation_pred)
+gam_validation_data = mutate(
+  gam_validation_id, 
+  prediction = gam_validation_pred
+)
 ```
 
-### Load BIOCLIM data
+## Load BIOCLIM data
 
 ```{r}
 chelsa_temp = terra::rast("data/output/chelsa_temp_stack.tif") |>
@@ -43,7 +46,7 @@ chelsa_data =
   )
 ```
 
-### Get residuals
+## Get correction layers
 
 ```{r}
 # link prediction and residual
@@ -59,7 +62,9 @@ gam_validation_data = mutate(
 )
 ```
 
-### Temperature residuals
+## Plot correction layers
+
+### Temperature correction
 
 ```{r}
 plots_temp_resid = filter(gam_validation_data, climvar == "t_mean") |>
@@ -107,7 +112,7 @@ plots_temp_resid = pmap(
 plots_temp_resid[[1]]
 ```
 
-### Precipitation residuals
+### Precipitation correction
 
 ```{r}
 plots_ppt_resid = filter(gam_validation_data, climvar == "ppt") |>
@@ -156,7 +161,6 @@ plots_ppt_resid = pmap(
 plots_ppt_resid[[1]]
 ```
 
-
 ```{r}
 # save residual plots
 ggsave(
@@ -169,5 +173,34 @@ ggsave(
   plots_ppt_resid,
   filename = "figures/fig_ppt_resid.png",
   width = 9, height = 7
+)
+```
+
+## Save correction layers
+
+```{r}
+# select models
+gam_validation_data = mutate(gam_validation_data,
+  model = as.numeric(as.factor(forms))
+)
+
+gam_selected_mods = filter(
+  gam_validation_data,
+  (model == 1 & climvar == "temp") | (model == 2 & climvar = "ppt")
+) |>
+  select(-prediction, -chelsa_rast)
+
+# check directory
+if(!dir.exists("data/spatial/climate_correction/")) {
+  dir.create("data/spatial/climate_correction/")
+}
+
+# pmap over and write
+pmap(gam_validation_data,
+  .f = function(season, climvar, forms, residual) {
+    terra::writeRaster(residual, file = glue::glue(
+      "data/spatial/climate_correction/cl_{climvar}_{season}.tif"
+    ))
+  }
 )
 ```
