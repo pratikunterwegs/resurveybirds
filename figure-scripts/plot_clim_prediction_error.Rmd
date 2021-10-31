@@ -220,7 +220,7 @@ gam_validation_data = mutate(
   gam_validation_data,
   residual = map2(chelsa_rast, prediction, function(ch, pr) {
     pr = terra::resample(pr, ch) # resampling required
-    pr - ch
+    ch / pr
   })
 )
 ```
@@ -240,10 +240,13 @@ plots_temp_resid = pmap(
       )+
       scale_fill_continuous_diverging(
         palette = "Blue-Red 3",
+        mid = 1,
         na.value = "transparent",
-        name = glue::glue("residual 
+        name = glue::glue("% of BIOCLIM 
                           {climvar}"),
-        limits = c(-5, 10)
+        limits = c(0.5, 1.5),
+        labels = scales::percent,
+        trans = ggallin::ssqrt_trans
       )+
       theme_test(base_size = 6)+
       theme(
@@ -266,6 +269,8 @@ plots_temp_resid = pmap(
   theme(
     legend.position = "right"
   )
+
+plots_temp_resid[[1]]
 ```
 
 ### Precipitation residuals
@@ -284,10 +289,13 @@ plots_ppt_resid = pmap(
       scale_fill_continuous_diverging(
         palette = "Vik",
         rev = T,
+        mid = 1,
         na.value = "transparent",
-        name = glue::glue("residual 
+        name = glue::glue("% of BIOCLIM 
                           {climvar}"),
-        limits = c(-600, 300)
+        limits = c(0.1, 5.5),
+        labels = scales::percent,
+        breaks = c(0.01, 0.5, seq(0.0, 5.5, 1))
       )+
       theme_test(base_size = 6)+
       theme(
@@ -310,6 +318,8 @@ plots_ppt_resid = pmap(
   theme(
     legend.position = "right"
   )
+
+plots_ppt_resid[[1]]
 ```
 
 
@@ -317,12 +327,14 @@ plots_ppt_resid = pmap(
 # save residual plots
 ggsave(
   plots_temp_resid,
-  filename = "figures/fig_temp_resid.png"
+  filename = "figures/fig_temp_resid.png",
+  width = 9, height = 7
 )
 
 ggsave(
   plots_ppt_resid,
-  filename = "figures/fig_ppt_resid.png"
+  filename = "figures/fig_ppt_resid.png",
+  width = 9, height = 7
 )
 ```
 
