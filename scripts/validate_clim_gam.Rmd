@@ -125,13 +125,17 @@ model_pred = Reduce(model_pred, f = c)
 terra::writeRaster(model_pred, "data/output/data_gam_pred.tif")
 ```
 
+```{r}
+model_pred = terra::rast("data/output/data_gam_pred.tif")
+```
+
 Average predictions over 1970 -- 2010.
 
 ```{r}
 # assign as list column
 data = mutate(
   data,
-  pred = model_pred
+  pred = as.list(model_pred)
 )
 
 # summarise using a reduce over the list
@@ -147,6 +151,9 @@ gam_pred_avg = Reduce(f = c, gam_pred_avg)
 
 # save averaged predictions
 terra::writeRaster(gam_pred_avg, filename = "data/output/gam_pred_valid_avg.tif")
+
+# load saved pred
+
 # write data for linking
 data_pred |>
   ungroup() |>
