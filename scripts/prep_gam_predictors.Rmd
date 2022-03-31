@@ -38,13 +38,19 @@ seq_date = seq(
 data = map2(
   data, clim_files,
   function(df, clf) {
+    
+    # get the coordinates
     coords = str_extract_all(clf, "\\d+\\.\\d+")[[1]]
     mutate(
       df, 
+      # add the date, year, and month, and season
+      # dry season is december to may 12 - 5
       date = seq_date,
       year = year(date),
       month = month(date),
       season = if_else(between(month, 6, 11), "rainy", "dry"),
+      
+      # convert coordinates
       x = as.numeric(coords[2]),
       y = as.numeric(coords[1])
     )
@@ -113,7 +119,7 @@ write_csv(
 ### Prepare for spatial data
 
 ```{r}
-# get unique data
+# get unique data, i.e., from unique coords
 coords = ungroup(data) |> 
   distinct(x, y) |> 
   mutate_all(
@@ -139,11 +145,18 @@ ext = st_bbox(coord_sf) |>
     st_transform(32643) |>
     st_buffer(25000) |>
     st_transform(4326)
-elevation = terra::rast('data/spatial/Elevation/alt')
 
+# load elevation raster
+elevation = terra::rast('data/spatial/Elevation/alt')
+# crop by extent of study area
 elevation_hills = terra::crop(elevation, as(ext, 'Spatial'))
-terra::writeRaster(elevation_hills, 'data/spatial/raster_elevation.tif',
-    overwrite = TRUE)
+
+# save a smaller piece
+terra::writeRaster(
+  elevation_hills, 
+  'data/spatial/raster_elevation.tif',
+  overwrite = TRUE
+)
 ```
 
 ### Prepare coastline data
@@ -153,6 +166,7 @@ terra::writeRaster(elevation_hills, 'data/spatial/raster_elevation.tif',
 coast = st_read("data/spatial/India/India_Boundary.shp")
 coast_line = st_cast(coast, "MULTILINESTRING")
 
+# load small elevation raster
 elev = terra::rast("data/spatial/raster_elevation.tif")
 elev_utm = terra::project(elev, "epsg:32643")
 ```
@@ -160,6 +174,7 @@ elev_utm = terra::project(elev, "epsg:32643")
 Resample raster to 600 m.
 
 ```{r}
+# resample the raster to 600 m from 30m
 elev_utm_600 = rast(ext(elev_utm), resolution = 600)
 elev_utm_600 = terra::resample(
   elev_utm, elev_utm_600
@@ -205,15 +220,21 @@ terra::writeRaster(
 # extract covariates using high-res raster
 coords = mutate(
   coords,
+  
+  # extract elevation
   elev = terra::extract(
     elevation_hills,
     st_coordinates(coord_sf)
   )$alt,
+  
+  # get distance to coastline
   coast = as.numeric(
     st_distance(coord_sf, coast_line)
   ),
+  
+  # get latitude
   lat = y
-) 
+)
 
 # link to climate data summary
 data = left_join(
