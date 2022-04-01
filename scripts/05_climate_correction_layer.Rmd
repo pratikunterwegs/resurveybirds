@@ -1,0 +1,206 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# Making Climate Correction Layers
+
+## Load GAM predictions
+
+```{r}
+# load data
+gam_validation_pred = terra::rast("data/output/gam_pred_valid_avg.tif") |>
+  as.list()
+gam_validation_id = read_csv("data/output/gam_model_formulas.csv")
+
+# select and save
+gam_validation_pred = gam_validation_pred[
+  gam_validation_id$climvar %in% c("ppt", "t_mean")
+]
+gam_validation_id = filter(gam_validation_id, climvar %in% c("ppt", "t_mean"))
+
+# link -- could have filtered here too -- oh well
+gam_validation_data = mutate(
+  gam_validation_id, 
+  prediction = gam_validation_pred
+)
+```
+
+## Load BIOCLIM data
+
+```{r}
+chelsa_temp = terra::rast("data/output/chelsa_temp_stack.tif") |>
+  as.list()
+chelsa_ppt = terra::rast("data/output/chelsa_ppt_stack.tif") |>
+  as.list()
+
+# make data
+chelsa_data =
+  crossing(
+  season = c("rainy", "dry"),
+  climvar = c("t_mean", "ppt")
+) |>
+  arrange(desc(climvar), desc(season)) |>
+  mutate(
+    chelsa_rast = append(chelsa_temp, chelsa_ppt)
+  )
+```
+
+## Get correction layers
+
+```{r}
+# link prediction and residual
+gam_validation_data = gam_validation_data |>
+  left_join(chelsa_data)
+
+gam_validation_data = mutate(
+  gam_validation_data,
+  residual = map2(chelsa_rast, prediction, function(ch, pr) {
+    pr = terra::resample(pr, ch) # resampling required
+    ch / pr
+  })
+)
+```
+
+## Plot correction layers
+
+### Temperature correction
+
+```{r}
+plots_temp_resid = filter(gam_validation_data, climvar == "t_mean") |>
+  select(-prediction, -chelsa_rast)
+plots_temp_resid = pmap(
+  plots_temp_resid,
+  .f = function(season, climvar, forms, residual) {
+    residual = st_as_stars(residual)
+    ggplot()+
+      geom_stars(
+        data = residual
+      )+
+      scale_fill_continuous_diverging(
+        palette = "Blue-Red 3",
+        mid = 1,
+        na.value = "transparent",
+        name = glue::glue("% of BIOCLIM 
+                          {climvar}"),
+        limits = c(0.5, 1.5),
+        labels = scales::percent,
+        trans = ggallin::ssqrt_trans
+      )+
+      theme_test(base_size = 6)+
+      theme(
+        legend.position = "right",
+        legend.key.height = unit(10, "mm"),
+        legend.key.width = unit(2, "mm"),
+        axis.title = element_blank()
+      )+
+      coord_sf(
+        expand = F
+      )+
+      labs(
+        title = glue::glue("variable: {climvar} season: {season} 
+                           model: {forms}")
+      )
+  }
+) |> wrap_plots(
+  guides = "collect"
+) &
+  theme(
+    legend.position = "right"
+  )
+
+plots_temp_resid[[1]]
+```
+
+### Precipitation correction
+
+```{r}
+plots_ppt_resid = filter(gam_validation_data, climvar == "ppt") |>
+  select(-prediction, -chelsa_rast)
+plots_ppt_resid = pmap(
+  plots_ppt_resid,
+  .f = function(season, climvar, forms, residual) {
+    residual = st_as_stars(residual)
+    ggplot()+
+      geom_stars(
+        data = residual
+      )+
+      scale_fill_continuous_diverging(
+        palette = "Vik",
+        rev = T,
+        mid = 1,
+        na.value = "transparent",
+        name = glue::glue("% of BIOCLIM 
+                          {climvar}"),
+        limits = c(0.1, 5.5),
+        labels = scales::percent,
+        breaks = c(0.01, 0.5, seq(0.0, 5.5, 1))
+      )+
+      theme_test(base_size = 6)+
+      theme(
+        legend.position = "right",
+        legend.key.height = unit(10, "mm"),
+        legend.key.width = unit(2, "mm"),
+        axis.title = element_blank()
+      )+
+      coord_sf(
+        expand = F
+      )+
+      labs(
+        title = glue::glue("variable: {climvar} season: {season} 
+                           model: {forms}")
+      )
+  }
+) |> wrap_plots(
+  guides = "collect"
+) &
+  theme(
+    legend.position = "right"
+  )
+
+plots_ppt_resid[[1]]
+```
+
+```{r}
+# save residual plots
+ggsave(
+  plots_temp_resid,
+  filename = "figures/fig_temp_resid.png",
+  width = 9, height = 7
+)
+
+ggsave(
+  plots_ppt_resid,
+  filename = "figures/fig_ppt_resid.png",
+  width = 9, height = 7
+)
+```
+
+## Save correction layers
+
+```{r}
+# select models
+gam_validation_data = mutate(gam_validation_data,
+  model = as.numeric(as.factor(forms))
+)
+
+gam_selected_mods = filter(
+  gam_validation_data,
+  (model == 1 & climvar == "temp") | (model == 2 & climvar = "ppt")
+) |>
+  select(-prediction, -chelsa_rast)
+
+# check directory
+if(!dir.exists("data/spatial/climate_correction/")) {
+  dir.create("data/spatial/climate_correction/")
+}
+
+# pmap over and write
+pmap(gam_validation_data,
+  .f = function(season, climvar, forms, residual) {
+    terra::writeRaster(residual, file = glue::glue(
+      "data/spatial/climate_correction/cl_{climvar}_{season}.tif"
+    ))
+  }
+)
+```

@@ -1,0 +1,154 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+# Prepare BIOCLIM data to validate candidate climate GAMs
+
+## Mean monthly temperature
+
+```{r}
+patterns <- c("tmin", "tmax")
+
+# list the filepaths
+tkAvg <- map(patterns, function(pattern) {
+  # list the paths
+  files <- list.files(
+    path = "data/spatial/chelsa",
+    full.names = TRUE,
+    recursive = TRUE,
+    pattern = pattern
+  )
+})
+
+# now run over the paths and read as rasters and crop by buffer
+tkAvg <- map(tkAvg, function(paths) {
+  # going over the file paths, read them in as rasters, convert CRS and crop
+  tempData <- map(paths, function(path) {
+    a <- terra::rast(path)
+    a <- terra::crop(a, terra::ext(stack))
+    a
+  })
+  # convert each to kelvin, first dividing by 10 to get celsius
+  tempData <- map(tempData, function(tmpRaster) {
+    tmpRaster <- (tmpRaster / 10) + 273.15
+    tmpRaster
+  })
+})
+
+# recursively get the mean temperature for each month
+# assign names
+names(tkAvg) <- patterns
+
+# go over the tmin and tmax and get the average monthly temp
+tkAvg <- map2(tkAvg[["tmin"]], tkAvg[["tmax"]], function(tmin, tmax) {
+  # return the mean of the corresponding tmin and tmax
+  # still in kelvin
+  terra::mean(c(tmin, tmax))
+})
+
+# check temp data
+assertthat::assert_that(
+  length(tkAvg) == 12,
+  msg = "temp raster list has fewer than 12 months"
+)
+
+# assign names
+names(tkAvg) = sprintf("month_%i", seq(12))
+
+# separate rainy and dry season
+temp_rainy = Reduce(tkAvg[seq(6, 11)], f = `c`) |>
+  terra::mean()
+temp_dry = Reduce(tkAvg[c(12, seq(5))], f = `c`) |>
+  terra::mean()
+
+# convert values back to celsius
+chelsa_t_mean = c(temp_rainy, temp_dry) - 273.15
+names(chelsa_t_mean) = c("chelsa_temp_rainy_6_11", "chelsa_temp_dry_12_5")
+
+# save stack
+terra::writeRaster(
+  chelsa_t_mean,
+  filename = "data/output/chelsa_temp_stack.tif",
+  overwrite = TRUE
+)
+```
+
+## Total monthly precipitation
+
+```{r}
+# list precipitation rasters --- get from BIOCLIM
+ppt <- list.files(
+  path = "data/spatial/chelsa",
+  full.names = TRUE,
+  recursive = TRUE,
+  pattern = "prec"
+)
+
+# now run over the paths and read as rasters and crop by buffer
+ppt <- map(ppt, function(path) {
+  # going over the file paths, read them in as rasts
+  a <- terra::rast(path)
+  terra::crop(a, terra::ext(stack))
+})
+
+# separate rainy and dry season
+ppt_rainy = Reduce(ppt[seq(6, 11)], f = `c`) |>
+  terra::mean()
+ppt_dry = Reduce(ppt[c(12, seq(5))], f = `c`) |>
+  terra::mean()
+
+# make and save stack
+chelsa_ppt_sum = c(ppt_rainy, ppt_dry)
+names(chelsa_ppt_sum) = c("chelsa_ppt_rainy_6_11", "chelsa_ppt_dry_12_5")
+
+# save stack
+terra::writeRaster(
+  chelsa_ppt_sum,
+  filename = "data/output/chelsa_ppt_stack.tif",
+  overwrite = TRUE
+)
+```
+
+## Get sample coordinates
+
+Select some coordinates and save data.
+
+```{r}
+# get coordinates from terra
+coords = terra::xyFromCell(
+  stack, 
+  cell = seq(length(values(stack[[1]])))
+)
+
+# sample 10 groups of 1000
+coords = coords[sample(1e4, replace = FALSE), ] |>
+  as_tibble()
+
+# extract data at locations
+sample_locations =
+  mutate(
+  coords,
+  terra::extract(stack, coords)
+) |>
+    mutate(
+      terra::extract(chelsa_ppt_sum, coords)
+    ) |>
+    mutate(
+      terra::extract(chelsa_t_mean, coords)
+    )
+```
+
+```{r}
+# save data
+write_csv(
+  sample_locations,
+  file = "data/output/data_sample_coords_gam_validation.csv"
+)
+```
+
+```{r}
+sample_locations = read_csv(
+  "data/output/data_sample_coords_gam_validation.csv"
+)
+```
